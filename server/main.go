@@ -6,8 +6,8 @@ import (
 	"io"
 	"log"
 	"net"
-	"slices"
 	"strings"
+	"wheelie/server/server"
 
 	"github.com/google/uuid"
 )
@@ -17,25 +17,12 @@ type Message struct {
 	open    bool
 }
 
-type Broker struct {
-	topics  []string
-	clients []string
-}
+func handle_connection(client server.Client, b *server.Broker) {
+	defer client.Close()
 
-func (b *Broker) create_topic(topic string) {
-	if slices.Contains(b.topics, topic) {
-		return
-	}
+	addr := conn.RemoteAddr().String()
 
-	b.topics = append(b.topics, topic)
-}
-
-func handle_connection(conn net.Conn, id string, broker *Broker) {
-	defer conn.Close()
-
-	client := conn.RemoteAddr().String()
-
-	log.Println("Connected to client on:", client)
+	log.Println("Connected to client on:", addr)
 	log.Println("Assigned client id:", id)
 
 	var message Message
@@ -43,7 +30,7 @@ func handle_connection(conn net.Conn, id string, broker *Broker) {
 		buffer := make([]byte, 1024)
 		n, err := conn.Read(buffer)
 		if err == io.EOF {
-			log.Println("Disconnected from client on:", client)
+			log.Println("Disconnected from client on:", addr)
 			return
 		}
 		if err != nil {
@@ -57,7 +44,6 @@ func handle_connection(conn net.Conn, id string, broker *Broker) {
 		lines := bytes.Split(buffer, []byte("\n"))
 		for _, line := range lines {
 			l := string(line)
-			log.Println(l)
 			if l == "START" {
 				message = Message{content: "", open: true}
 			} else if l == "END" {
@@ -65,19 +51,38 @@ func handle_connection(conn net.Conn, id string, broker *Broker) {
 			} else if message.open {
 				message.content += l
 			}
-		}
 
-		if !message.open {
-			log.Println("Message received from: " + client)
-			log.Printf("Message: %s\n", message.content)
-			args := strings.Split(message.content, " ")
-			if args[0] == "TOPIC" && args[1] == "CREATE" {
-				broker.create_topic(args[2])
+			if !message.open {
+				log.Println("Message received from: " + addr)
+				log.Printf("Message: %s\n", message.content)
+				args := strings.Split(message.content, " ")
+				if args[0] == "DECLARE" {
+					err := client.Declare(b, args[1], args[2])
+					if err != nil {
+
+					}
+				}
+
+				if client.Type == "NONE" {
+					continue
+				}
+
+				if args[0] == "TOPIC" && args[1] == "CREATE" {
+					b.CreateTopic(args[2])
+				}
+
+				if args[0] == "PUBLISH" && args[1] == "SEND" && client.Type == "publisher" {
+					log.Println("Publishing message:" + args[3])
+					err := b.Publish(client.Topic, args[3])
+					if err != nil {
+						conn.Write([]byte(err.Error()))
+					}
+				}
+
+				log.Println(strings.Split(message.content, " "))
 			}
-
-			log.Println(strings.Split(message.content, " "))
-			log.Println(len(strings.Split(message.content, " ")))
 		}
+
 	}
 }
 
@@ -97,7 +102,7 @@ func main() {
 
 	// clients := []string{}
 	// topics := []string{}
-	broker := Broker{}
+	b := server.Broker{}
 
 	for {
 		conn, err := ln.Accept()
@@ -105,9 +110,10 @@ func main() {
 			log.Fatal(err)
 		}
 
-		id := uuid.New().String()
+		client := server.Client{Id: uuid.NewString(), Type: "NONE"}
+
 		// clients = append(clients, id)
 
-		go handle_connection(conn, id, &broker)
+		go handle_connection(client, &b)
 	}
 }

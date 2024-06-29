@@ -22,11 +22,22 @@ func main() {
 	log.Println("Connected to:", conn.RemoteAddr().String())
 
 	conn.Write([]byte("START\n"))
-	conn.Write([]byte(fmt.Sprintf("TOPIC CREATE %s \n", topic)))
+	conn.Write([]byte("DECLARE PUBLISHER rabbits\n"))
 	conn.Write([]byte("END\n"))
-	// conn.Write([]byte(fmt.Sprintf("TOPIC CREATE %s", topic)))
+
+	// conn.Write([]byte("START\n"))
+	// conn.Write([]byte(fmt.Sprintf("TOPIC CREATE %s\n", topic)))
+	// conn.Write([]byte("END\n"))
 	conn.Write([]byte("START\n"))
-	conn.Write([]byte(fmt.Sprintf("PUBLISH SEND %s \n", topic)))
+	conn.Write([]byte("PUBLISH SEND \n"))
 	conn.Write([]byte("\"data\"\n"))
 	conn.Write([]byte("END\n"))
+
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(buffer[:n]))
 }
